@@ -1,0 +1,27 @@
+supervisor管理进程工具
+简介
+supervisor 是一个用 python 语言编写的进程管理工具，
+它可以很方便的监听、启动、停止、重启一个或多个进程。
+当一个进程意外被杀死，supervisor 监听到进程死后，
+可以很方便的让进程自动恢复，不再需要程序员或系统管理员自己编写代码来控制。
+
+supervisord
+●supervisor的服务端：运行supervisor时会启动一个进程supervisord
+●负责启动所管理的进程，并将所管理的进程作为自己的子进程来启动
+●可以在所管理的进程出现崩溃时自动启动
+
+
+安装：windows版
+pip install supervisor-win
+使用过程：
+1、把supervisor文件夹扔到项目根目录
+2、在当前目录开启终端，启动服务：
+    supervisord -c .\supervisor\supervisord.conf
+    运行之后，此终端不能关闭。
+3、查看动行状态：supervisorctl status
+    如果所有子进程都运行正常：RUNNING（正常状态）
+    例：
+    myapp     RUNNING   pid 25036, uptime 0:04:53
+    myapp2    RUNNING   pid 41392, uptime 0:04:53
+
+
