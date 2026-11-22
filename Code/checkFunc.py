@@ -1,3 +1,5 @@
+import os
+
 import pymysql
 #引入数据库连接池
 import mysql_pool
@@ -12,7 +14,9 @@ from flask import request
 import logging
 import logging.config
 #配置日志配置文件
-logging.config.fileConfig('logging.conf')
+# 无论从项目根目录还是 Code/ 启动，都按当前模块位置读取日志配置。
+LOGGING_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logging.conf')
+logging.config.fileConfig(LOGGING_CONFIG)
 #创建日志对象
 logger = logging.getLogger('applog')
 
