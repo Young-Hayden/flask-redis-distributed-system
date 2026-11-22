@@ -18,8 +18,8 @@ pool = PooledDB(
     user = config.MYSQL_USER,
     # 密码：
     password = config.MYSQL_PASSWORD,
-    # 数据库名
-    db = config.MYSQL_DB,
+    # 数据库名（dbutils 3.x 用 database，旧参数名 db 已弃用）
+    database = config.MYSQL_DB,
     # 连接池中允许的最大连接数
     maxconnections= config.MYSQL_MAX_CONNECTIONS,
     # 连接池中空连接的最大数量（闲置连接的上限，超过的会被释放）

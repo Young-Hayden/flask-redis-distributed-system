@@ -104,20 +104,15 @@ def hello():
     cursor.execute('select id,uname,sex,class from student order by id desc limit 5')
     stu_info = cursor.fetchall()
 
-    # 缓存三件套改造：SCAN 替代 KEYS、写缓存带 TTL+抖动（防雪崩），见 cache_utils.py
-    keys = cache_utils.scan_keys('stu_info:*')
-    # 判断keys的长度，如果为0，则表示没有数据
-    if len(keys) == 0:
-        # 直接用上面查出来的 stu_info 写入缓存（不用再查一遍数据库）
-        for row in stu_info:
-            cache_utils.cache_set(f'stu_info:{row["id"]}', row)
-        print('从数据库中来')
-    else:
-        print('从缓存中来')
-    # 从缓存中将指定多行数据取出来==============================
-    stu_list = []
-    for key_i in keys:
-        stu_list.append(cache_utils.cache_get(key_i))
+    # 列表缓存防击穿版：命中直接用；miss 时抢锁，只放一个请求回源重建（见 cache_utils.py）
+    def _rebuild_stu_cache():
+        # 回源闭包：从 MySQL 取最新 5 条，拼成 [(key, value), ...] 交给 cache_utils 写入
+        cursor.execute('select id,uname,sex,class from student order by id desc limit 5')
+        rows = cursor.fetchall()
+        print('首页缓存 miss，回源重建（互斥锁保护）')
+        return [(f'stu_info:{r["id"]}', r) for r in rows]
+
+    stu_list = cache_utils.cache_list_get_or_rebuild('stu_info:*', _rebuild_stu_cache, 'stu')
 
     # redis 的 keys() 返回顺序不固定，按 id 倒序排一下，保证“最新5条”顺序稳定
     stu_list.sort(key=lambda x: x['id'], reverse=True)
@@ -172,6 +167,10 @@ def rev_post():
     name = request.form['name']
     pwd = request.form['pwd']
 
+    # 登录失败限流（防爆破）：窗口内失败满 5 次直接拒绝，不再走数据库验证（fail-fast）
+    if checkFunc.login_too_many_fails(name):
+        return '<script>alert("失败次数过多，账号已锁定10分钟，请稍后再试");location.href="/login";</script>'
+
     # 调用登录验证函数
     res = checkFunc.checkLogin(name,pwd)
 
@@ -186,6 +185,8 @@ def rev_post():
     if res:
         # 登录成功，将信息存入session
         session['user'] = name
+        # 登录成功清零失败计数（正常用户偶尔手滑不该被累计惩罚）
+        checkFunc.clear_login_fails(name)
         # 密码不写入 session（明文存进 cookie 有泄露风险）
 
         # 获取session值
@@ -209,6 +210,8 @@ def rev_post():
         username_js = json.dumps(username, ensure_ascii=False).replace('<', '\\u003c')
         return f'<script>alert("欢迎："+{username_js}+"，登录成功");location.href="/aboutus";</script>'
     else:
+        # 记一次失败（Redis 计数器 INCR+EXPIRE，见 checkFunc.record_login_fail）
+        checkFunc.record_login_fail(name)
         return '<script>alert("账号密码错误,请重新登录");location.href="/login";</script>'
 
 # 退出登录
@@ -271,25 +274,14 @@ def news_list():
     conn, cursor = get_db_cursor()
     # 从缓存中读取数据
 
-    # 从数据库中读取所有数据逐条写入缓存，并从缓存中读出来=====================
-    keys = cache_utils.scan_keys('news_info:*')
-    # 判断keys的长度，如果为0，则表示没有数据
-    if len(keys) == 0:
-        # 从数据库中读取所有信息，存到redis里面
+    # 列表缓存防击穿版（和学生列表同一套，见 cache_utils.cache_list_get_or_rebuild）
+    def _rebuild_news_cache():
         cursor.execute('select id,title,content from news order by id desc limit 5')
-        res = cursor.fetchall()
-        for row in res:
-            cache_utils.cache_set(f'news_info:{row["id"]}', row)
-        # 在这里重新扫一遍缓存键
-        keys = cache_utils.scan_keys('news_info:*')
-        print('从数据库中来')
-    else:
-        print('从缓存中来')
-    # 从缓存中将指定多行数据取出来==============================
-    # 定义一个学生列表变量
-    news_list = []
-    for key_i in keys:
-        news_list.append(cache_utils.cache_get(key_i))
+        rows = cursor.fetchall()
+        print('新闻缓存 miss，回源重建（互斥锁保护）')
+        return [(f'news_info:{r["id"]}', r) for r in rows]
+
+    news_list = cache_utils.cache_list_get_or_rebuild('news_info:*', _rebuild_news_cache, 'news')
 
     # redis 的 keys() 返回顺序不固定，按 id 倒序排一下
     news_list.sort(key=lambda x: x['id'], reverse=True)
@@ -399,29 +391,22 @@ def get_name():
     # request.args.get('name','备用值') 备用值是当get获取None值时，显示此值。
     name = request.args.get('name','李军')
 
-    # 缓存防穿透示例（点查询的 Cache-Aside，键：stu_name:{名字}）=====================
-    # 先查缓存 → 命中直接返回；未命中才查库，并把结果（包括"查无此人"）写进缓存
+    # 点查询的 Cache-Aside 完整版（键：stu_name:{名字}）=====================
+    # cache_get_or_load 内部做四件事：查缓存 → miss 抢锁（防击穿）→ 双重检查 →
+    # 回源（loader）；查无此人自动写空值哨兵（防穿透）
     key = f'stu_name:{name}'
-    cached = cache_utils.cache_get(key)
-    res = None
-    if cached is not None:
-        # 命中"空值哨兵"：库里根本没这个人，直接回复——请求打不到 MySQL（防穿透）
-        if cached == cache_utils.EMPTY:
-            return '用户不存在（缓存拦截）'
-        res = cached
-        print('get_name 从缓存中来')
-    else:
-        # 取当前请求的独立数据库连接（不查 birthday，date 类型 Redis 存不了）
+
+    def _load_student():
+        # 回源闭包：取当前请求的独立数据库连接（不查 birthday，date 类型 Redis 存不了）
         conn, cursor = get_db_cursor()
         cursor.execute('select id,uname,sex,class from student where uname = %s',(name,))
-        res = cursor.fetchone()
-        if res is not None:
-            cache_utils.cache_set(key, res)      # 正常数据入缓存（TTL+抖动）
-            print('get_name 从数据库中来')
-        else:
-            cache_utils.cache_set_empty(key)     # 查无此人 → 写空值哨兵，短 TTL（防穿透）
-            print('get_name 空值写入缓存')
-    # 缓存防穿透示例 =====================
+        return cursor.fetchone()
+
+    res = cache_utils.cache_get_or_load(key, _load_student)
+    if res == cache_utils.EMPTY:
+        # 命中"空值哨兵"：库里根本没这个人，直接回复——请求打不到 MySQL（防穿透）
+        return '用户不存在（缓存拦截）'
+    # 点查询 Cache-Aside =====================
 
     if res is not None:
         # escape() 转义HTML特殊字符，防止库里的数据被当成HTML/JS执行（XSS）
