@@ -1,0 +1,37 @@
+name: CI
+
+# push 到 main / 提 PR 时自动跑单元测试，绿勾会显示在仓库首页和每次 commit 旁边
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # 单测依赖真实 Redis（锁/缓存/限流都要连它）：CI 里用 service 容器起一个
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: 运行单元测试
+        run: pytest tests/ -v

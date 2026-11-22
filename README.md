@@ -1,5 +1,7 @@
 # Flask-Redis 分布式多进程服务系统
 
+![CI](https://github.com/Young-Hayden/flask-redis-distributed-system/actions/workflows/ci.yml/badge.svg)
+
 > 一个把 Web 主站、爬虫数据接口、WebSocket 长连接、缓存刷新守护进程拆分为**多个独立进程协作**的小型分布式系统，演示了多实例负载均衡、Redis 共享 Session、分布式锁、缓存穿透/击穿/雪崩防护等分布式部署的核心要素。
 
 ## 一张图看懂架构
@@ -38,17 +40,19 @@ flowchart LR
 | 长连接 | websockets + asyncio | 协程聊天服务 |
 | 爬虫 | urllib + BeautifulSoup | 独立 JSON 接口服务（8000 端口） |
 | 压测 | Locust | 缓存命中 vs 穿透对比，`bench/locustfile.py` |
+| 测试/CI | pytest + GitHub Actions | 16 个单测，push 自动回归（CI 里起 Redis 容器） |
 | 编排 | docker-compose | nginx ×1 + web ×2 + api + ws + mysql + redis，`deploy/docker-compose.yml` |
 
 ## 核心亮点（面试可以直接讲的话）
 
 1. **多实例水平扩容**：nginx 轮询两个 waitress 实例；session 已迁移到 Redis（服务端），实例无状态，扩容只需加进程——"为什么能加实例"的标准答案是**登录态不再绑在单机上**。
 2. **分布式锁防重复劳动**：缓存刷新守护进程跑 2 个副本时，每轮刷新先抢 `SET NX EX` 锁（随机 token + Lua 原子释放），实测输出：一个副本干活，另一个打印"本轮跳过（分布式锁生效）"。
-3. **缓存三件套**：`KEYS` → `SCAN`（不阻塞 Redis）；TTL + 随机抖动（防集中过期雪崩）；查无此人也缓存空值哨兵 + 短 TTL（防恶意穿透，实测第二次请求直接被缓存拦截）。
+3. **缓存四防闭环**：`KEYS` → `SCAN`（不阻塞 Redis）；TTL + 随机抖动（防雪崩）；空值哨兵 + 短 TTL（防穿透，实测第二次请求直接被缓存拦截）；读路径互斥锁回源 + 双重检查（防击穿，单测验证 loader 只执行一次）。
 4. **每请求独立数据库连接**：发现教学版共用全局 cursor 的并发隐患后，改为 `flask.g` 挂独立连接 + `teardown_request` 自动归还。
 5. **配置与代码解耦**：全部地址/端口/密码走环境变量与 `.env`（12-Factor 第 3 条），docker 编排里改环境变量即指向不同容器，代码零修改。
 6. **压测验证设计**：Locust 50 并发实测——点查询命中缓存 p50 5ms，穿透到库 p50 8ms；单机小数据集差距约 40%，并分析出本机压测差距受限于 MySQL 就在隔壁（详见下文压测表）。
-7. **安全实践**：SQL 全程参数化查询防注入；输出转义防 XSS；`SECRET_KEY` 走环境变量；密码不落 session。
+7. **安全实践**：SQL 全程参数化查询防注入；输出转义防 XSS；`SECRET_KEY` 走环境变量；密码不落 session；**登录失败限流**（Redis `SET NX EX` + `INCR` 原子计数器，失败 5 次锁 10 分钟，实测第 6 次请求被拦截）。
+8. **测试与 CI**：16 个 pytest 单测（锁互斥/伪造 token 防误删/防穿透/防击穿/限流窗口），GitHub Actions 起 Redis 容器自动回归，push 即出绿勾。
 
 ## 压测数据（Locust，本机实测，50 并发 / 30s / 0 错误）
 
@@ -116,6 +120,7 @@ R_project/
 ├── supervisor/              # 进程托管配置（web / 双缓存刷新）
 ├── deploy/                  # nginx.conf + docker-compose.yml + Dockerfile
 ├── bench/locustfile.py      # 压测脚本（缓存命中 vs 穿透）
+├── tests/                   # 16 个单测（锁互斥/防穿透/防击穿/限流/分页）
 ├── schema.sql               # 建表 + 种子数据
 ├── docs/讲解手册.md          # 每个模块怎么给面试官讲（含追问应对）
 └── 面试笔记.md               # 知识点复习笔记

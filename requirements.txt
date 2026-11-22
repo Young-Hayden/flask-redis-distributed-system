@@ -25,3 +25,6 @@ websockets==17.0.1
 
 # 压测工具（跑 bench/locustfile.py 用，正式部署不需要）
 # locust==2.47.0
+
+# 单元测试（跑 tests/ 用，CI 里会自动安装）
+# pytest==8.4.2
