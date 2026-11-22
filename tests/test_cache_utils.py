@@ -12,9 +12,10 @@ def test_cache_set_get_roundtrip():
     assert cache_utils.cache_get('test:roundtrip') == data
 
 
-def test_ttl_has_jitter():
+def test_ttl_has_jitter(monkeypatch):
     """TTL 必须落在 [基础值, 基础值+抖动上限] 区间内（防雪崩的核心保证）。"""
     base, jitter = 100, 50
+    monkeypatch.setattr(cache_utils.config, 'CACHE_TTL_JITTER', jitter)
     cache_utils.cache_set('test:ttl', 'x', ttl=base)
     ttl = redis_client.ttl('test:ttl')
     assert base <= ttl <= base + jitter
