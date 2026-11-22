@@ -1,0 +1,152 @@
+<!-- 
+vscode:
+编写上HTML代码时，有相关协助插件和特殊语法来协助编写，emmet语言。 
+
+
+前端技术栈：
+1、基本功：HTML、CSS (sass lass)、JavaScript (TS)
+2、框架：React、Vue、Angular
+
+
+DIV+CSS
+
+标签：四大公共属性
+1、id
+2、name
+3、style
+4、class
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>搜索功能</title>
+    <style>
+        *{
+            margin: 0px;
+            padding: 0px;
+        }
+
+        .top{
+            width: 800px;
+            height: 500px;
+            border: 1px black solid;
+            background-color: bisque;
+
+            /* 水平居中对齐 */
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* 父子关系 */
+        .top div{
+            width: 100%;
+            height: 60px;
+            /* 边框线： */
+            /* border-bottom: 1px black solid; */
+            /* 水平居中对齐 */
+            margin-left: auto;
+            margin-right: auto;
+
+            /* 文字水平居中 */
+            text-align: center;
+            /* 文字垂直居中 */
+            line-height: 60px;
+
+            background-color: bisque;
+        }
+
+        .top div:hover{
+            background-color: aliceblue;
+        }
+
+        .top .title{
+            font-size: 34px;
+            height: 80px;
+            line-height: 80px;
+            margin-top: 50px;
+            margin-bottom: 50px;
+        }
+
+        /* 并列关系 */
+        .top .txt_input   ,    .top .button{
+            border: 0px;
+        }
+
+        .top .button{
+            margin-top: 50px;
+        }
+
+        .top .txt_input input{
+            width: 90%;
+            height: 40px;
+            /* 设置输框背景色透明 */
+            background-color: transparent;
+            border: 0px;
+            border-bottom: 1px black solid;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .top .button input{
+            width: 200px;
+            height: 50px;
+
+            background-color: rgb(117, 241, 22);
+
+            font-size: 24px;
+
+            border-top-left-radius: 50px;
+            border-bottom-right-radius: 50px;
+        }
+
+         .top .button input:hover{
+            background-color: beige;
+         }
+
+         /* 
+         超链接美化
+         link 访问前
+         hover 悬停
+         visited 访问后
+         active 当鼠标按下没抬起
+         */
+         .button a:link,.button a:visited {
+            color: black;
+            text-decoration: none;
+            font-size: 24px;
+         }
+         .button a:hover{
+            color: red;
+         }
+         .button a:active{
+            color: green;
+         }
+    </style>
+</head>
+<!-- 
+表单：form
+表单元素：
+输入框、单选按扭、多选按钮、下拉列表、按钮
+
+一个网页中可以添加多个表单
+-->
+<body>
+
+    <div class="top" >
+        <!-- 
+        action：指表单提交的地址，地址可以用URL，也可以相对地址。
+        method：数据传送的格式，get post。
+        -->
+        <form action="/get_name" method="get">
+            <div class="title">搜索引擎</div>
+            <div class="txt_input"><input type="text" name="name" placeholder="请输入信息"></div>
+            <div class="button"><input type="submit" value="搜索按钮"></div>
+            <div class="button"><a href="/login" >登录</a></div>
+        </form>
+    </div>
+
+</body>
+</html>

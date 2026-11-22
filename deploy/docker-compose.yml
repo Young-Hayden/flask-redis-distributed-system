@@ -1,0 +1,98 @@
+# ============================================================
+# 一键编排：nginx ×1 + Web 实例 ×2 + 爬虫接口服务 + MySQL + Redis
+# 用法（需要本机装 Docker Desktop）：
+#   cd deploy && docker compose up -d --build
+#   浏览器访问 http://localhost
+#
+# 这份文件展示的是"分布式部署"的编排思路：
+#   1. web1/web2 是同一镜像的两个实例，nginx 轮询分流（水平扩容的最小单元）
+#   2. 所有服务通过服务名互相访问（MYSQL_HOST=mysql REDIS_HOST=redis），
+#      验证了 config.py "配置与代码解耦"的设计——代码一行不用改
+#   3. session 存 Redis，所以请求落在 web1 还是 web2 登录态都有效
+# 注：本机当前未装 Docker，此文件作为部署方案内容保留；本机演示走 supervisor 方案
+# ============================================================
+services:
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"                       # 对外唯一入口
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web1
+      - web2
+    restart: unless-stopped
+
+  # 同一镜像起两个 Web 实例：环境变量只改端口，代码完全相同
+  web1:
+    build:
+      context: ..                     # 构建上下文=项目根目录（COPY requirements.txt / Code/）
+      dockerfile: deploy/Dockerfile
+    environment: &web_env
+      MYSQL_HOST: mysql               # 容器内用服务名连数据库（config.py 从环境变量读）
+      REDIS_HOST: redis
+      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      WEB_PORT: "5000"
+    depends_on:
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  web2:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      WEB_PORT: "5001"
+    depends_on:
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # 爬虫数据接口服务（主站去它那拿新浪/网易新闻 JSON）
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-u", "http_server.py"]
+    environment:
+      API_PORT: "8000"
+    restart: unless-stopped
+
+  # WebSocket 聊天服务；容器里必须监听 0.0.0.0 才能被外部访问（localhost 只能本机）
+  ws:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-u", "websocket_server.py"]
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+      WS_HOST: "0.0.0.0"
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      MYSQL_DATABASE: mydb2509
+    volumes:
+      - ../schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro   # 首次启动自动建表+种子数据
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
